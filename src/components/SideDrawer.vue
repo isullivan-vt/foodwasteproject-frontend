@@ -1,3 +1,4 @@
+<!--This components uses a Vuetify side drawer component and contains links to all pages in the application. It is used on all pages-->
 <template>
   <v-navigation-drawer v-model="drawer" app
                        clipped
@@ -46,6 +47,7 @@
 export default {
   name: "SideDrawer",
   data:() => ({
+    // if the drawer value is false, the drawer is close, if true it is open
     drawer: false
   })
 }

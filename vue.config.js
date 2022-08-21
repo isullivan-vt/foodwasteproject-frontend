@@ -1,6 +1,4 @@
 const pagesConfig = require("./src/entry/pages.config.js");
-const path = require("path");
-const { apiServer } = require("./src/api");
 
 module.exports = {
   devServer: {

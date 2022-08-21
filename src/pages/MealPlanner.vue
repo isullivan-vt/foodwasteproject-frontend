@@ -1,9 +1,10 @@
 <template>
   <div id="app">
     <v-app>
-      <NavigationBar @toggle-drawer="$refs.drawer.drawer = !$refs.drawer.drawer"></NavigationBar>
+      <NavigationBar @toggle-drawer="$refs.drawer.drawer = !$refs.drawer.drawer" @toggle-login="$refs.login.login = !$refs.login.login"></NavigationBar>
       <SideDrawer ref="drawer"></SideDrawer>
-      <LogIn></LogIn>
+      <LogIn ref="login"></LogIn>
+      <v-container v-if="userid > 0">
       <h1>Meal Planner</h1>
       <v-dialog
           v-model="dialog"
@@ -54,11 +55,12 @@
             <span class="text-h5">Add Recipe to My Meal Plan</span>
           </v-card-title>
           <v-card-text>
-          <v-text-field
-              v-model="mealDate"
-              label="Meal Date"
-              type="date"
-          ></v-text-field>
+            <v-date-picker
+                v-model="mealDate"
+                locale="en-in"
+                :min="today"
+                name="Meal Date"
+            ></v-date-picker>
             </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
@@ -104,8 +106,13 @@
         </v-data-table>
       </div>
       <div>
-
+        <span class="text-h5">My Upcoming Meals</span>
+        <MealTimeline></MealTimeline>
       </div>
+      </v-container>
+      <v-container v-else>
+        <h1>You are not logged in!</h1>
+      </v-container>
       <FooterBar/>
     </v-app>
   </div>
@@ -117,9 +124,11 @@ import SideDrawer from "@/components/SideDrawer.vue";
 import FooterBar from "@/components/FooterBar.vue";
 import LogIn from "@/components/LogIn.vue"
 import axios from "axios";
+import MealTimeline from "@/components/MealTimeline.vue";
 
 export default {
   components: {
+    MealTimeline,
     SideDrawer,
     NavigationBar,
     FooterBar,
@@ -129,8 +138,10 @@ export default {
     search: '',
     dialog: false,
     add: false,
+    today: new Date().toISOString().slice(0, 10),
     recipeDetail: [],
     mealDate: (new Date(Date.now() - (new Date()).getTimezoneOffset() * 60000)).toISOString().substr(0, 10),
+    // Mapping for meal planner data grid component
     headers: [
       { text: 'Actions', value: 'actions', sortable: false },
       {text: 'Recipe Id', value: 'recipe_id'},
@@ -140,7 +151,13 @@ export default {
     items: [],
     viewedRecipe: {},
   }),
+  computed: {
+    userid() {
+      return localStorage.userid;
+    }
+  },
   mounted() {
+    // Load grid data when page loads
     this.loadItems()
   },
   watch: {
@@ -149,6 +166,7 @@ export default {
     },
   },
   methods: {
+    // GET request to load all user's recipe data from meal_planner table
     loadItems() {
       let self = this
       this.items = []
@@ -165,11 +183,12 @@ export default {
         })
       })
     },
+    // GET request to load recipe detail when a user requests more detail on a record
     loadRecipeDetail(id) {
       let self = this
       this.recipeDetail = []
       axios.get(
-          "/api/recipe_window/" + id,
+          "/api/recipe_window/" + id + "/" + this.userid,
       ).then(function (response) {
         self.recipeDetail = response.data.map((item) => {
           return {
@@ -183,21 +202,24 @@ export default {
         })
       })
     },
+    // Open recipe detail dialog window and set viewed recipe object with data from current row
     showRecipe(item) {
       this.viewedRecipe = Object.assign({}, item);
       this.loadRecipeDetail(this.viewedRecipe.recipe_id);
       this.dialog = true;
     },
+    // Open meal data picker dialog window and set viewed recipe object with data from current row
     addRecipe(item) {
       this.viewedRecipe = Object.assign({}, item);
       this.add = true;
     },
+    // POST request to insert record into meal_calendar table when user adds a recipe to their calendar
     createMealCalendarEntry(id) {
       axios.post("/api/meal-calendar", {
         recipe_id: id,
         meal_date: this.mealDate,
-        create_user_id: 1,
-        update_user_id: 1,
+        create_user_id: this.userid,
+        update_user_id: this.userid,
         record_status: 'A'
       })
     },

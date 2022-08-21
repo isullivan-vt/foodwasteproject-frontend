@@ -1,12 +1,12 @@
 <template>
   <div id="app">
     <v-app>
-    <NavigationBar @toggle-drawer="$refs.drawer.drawer = !$refs.drawer.drawer"></NavigationBar>
+      <NavigationBar @toggle-drawer="$refs.drawer.drawer = !$refs.drawer.drawer" @toggle-login="$refs.login.login = !$refs.login.login"></NavigationBar>
       <SideDrawer ref="drawer"></SideDrawer>
-      <LogIn></LogIn>
-    <div>
+      <LogIn ref="login"></LogIn>
+      <v-container v-if="userid > 0" class="my-5">
       <h1>Shopping List</h1>
-      <div>
+      <div align="right">
         <v-dialog
             v-model="dialog"
             persistent
@@ -18,6 +18,7 @@
                 dark
                 v-bind="attrs"
                 v-on="on"
+                class="ml-5"
             >
               New Item
             </v-btn>
@@ -35,11 +36,13 @@
                       md="4"
                   >
                     <v-autocomplete
+                        :error-messages="foodErrors"
                         :items="foodMenuList"
                         v-model="food"
                         item-text="food_description"
                         item-value="food_id"
                         label="Food Item"
+
                         required
                     ></v-autocomplete>
                   </v-col>
@@ -49,10 +52,16 @@
                       md="4"
                   >
                     <v-text-field
+                        :error-messages="quantityErrors"
                         v-model="quantity"
                         label="Quantity"
                         required
                         type="number"
+                        @input="$v.quantity.$touch()"
+                        @blur="$v.quantity.$touch()"
+                        step=".1"
+                        min="0"
+                        max="9999"
                     ></v-text-field>
                   </v-col>
                   <v-col
@@ -61,6 +70,7 @@
                       md="4"
                   >
                     <v-autocomplete
+                        :error-messages="unitErrors"
                         :items="unitMenuList"
                         v-model="unit"
                         item-text="unit_abbreviation"
@@ -69,14 +79,19 @@
                         required
                     ></v-autocomplete>
                   </v-col>
-                  <vcol>
                   <v-text-field
+                      :error-messages="costErrors"
                       v-model="cost"
                       label="Cost"
                       required
-                      type="cost"
+                      type="number"
+                      step=".01"
+                      min="0"
+                      max="9999.99"
+                      @input="$v.cost.$touch()"
+                      @blur="$v.cost.$touch()"
+                      @keypress="onlyForCurrency"
                   ></v-text-field>
-                  </vcol>
                 </v-row>
               </v-container>
             </v-card-text>
@@ -92,6 +107,7 @@
               <v-btn
                   color="blue darken-1"
                   text
+                  :disabled="disabled"
                   @click="dialog = false; createItem()"
               >
                 Save
@@ -102,6 +118,8 @@
         <v-btn
             color="primary"
             dark
+            sm="10"
+            class="ml-5"
             @click="addToPantry()"
         >
           Add To Pantry
@@ -121,7 +139,10 @@
           show-select
           item-key="food_description">
       </v-data-table>
-    </div>
+      </v-container>
+      <v-container v-else>
+        <h1>You are not logged in!</h1>
+      </v-container>
       <FooterBar/>
     </v-app>
   </div>
@@ -131,10 +152,20 @@
 import NavigationBar from "@/components/NavigationBar.vue";
 import SideDrawer from "@/components/SideDrawer.vue";
 import FooterBar from "@/components/FooterBar.vue";
-import LogIn from "@/components/LogIn.vue"
+import LogIn from "@/components/LogIn.vue";
 import axios from "axios";
+import { validationMixin } from 'vuelidate';
+import {required, maxValue, minValue} from 'vuelidate/lib/validators';
 
 export default {
+  mixins: [validationMixin],
+
+  validations: {
+    quantity: { required, maxValue: maxValue(9999), minValue: minValue(0) },
+    cost: { maxValue: maxValue(9999.99), minValue: minValue(0) },
+    food: { required },
+    unit: { required }
+  },
   components: {
     SideDrawer,
     NavigationBar,
@@ -150,12 +181,12 @@ export default {
     cost: null,
     quantity: 0,
     headers: [
-      {text: 'Food Inventory Id', value: 'food_inventory_id'},
-      {text: 'Food Id', value: 'food_id'},
+      {text: 'Food Inventory Id', value: 'food_inventory_id', align: ' d-none'},
+      {text: 'Food Id', value: 'food_id', align: ' d-none'},
       {text: 'Item', value: 'food_description'},
       {text: 'Food Type', value: 'food_type_description'},
       {text: 'Quantity', value: 'food_quantity'},
-      {text: 'Unit Id', value: 'food_unit_id'},
+      {text: 'Unit Id', value: 'food_unit_id', align: ' d-none'},
       {text: 'Quantity Unit', value: 'unit_abbreviation'},
       {text: 'Total Cost', value: 'food_cost'}
     ],
@@ -163,17 +194,58 @@ export default {
     foodMenuList: [],
     unitMenuList: [],
   }),
+  computed: {
+    userid() {
+      return localStorage.userid;
+    },
+    // Build errors to display when an input field dows not validate
+    foodErrors () {
+      const errors = []
+      !this.$v.food.required && errors.push('Item is required')
+      return errors
+    },
+    unitErrors () {
+      const errors = []
+      !this.$v.unit.required && errors.push('Unit is required')
+      return errors
+    },
+    quantityErrors () {
+      const errors = []
+      if (!this.$v.quantity.$dirty) return errors
+      !this.$v.quantity.required && errors.push('Quantity is required.')
+      !this.$v.quantity.minValue && errors.push('Quantity must a positive number')
+      !this.$v.quantity.maxValue && errors.push('Quantity must be less than 9999')
+      return errors
+    },
+    costErrors () {
+      const errors = []
+      if (!this.$v.cost.$dirty) return errors
+      !this.$v.cost.minValue && errors.push('Cost must a positive number')
+      !this.$v.cost.maxValue && errors.push('Cost must be less than 9999.99')
+      return errors
+    },
+    // Enable the save button if all of the input fields validate
+    disabled () {
+      if (this.costErrors.length === 0 && this.quantityErrors.length === 0 && this.unitErrors.length === 0 && this.foodErrors.length === 0) {
+        return false
+      } else {
+        return true
+      }
+    }
+  },
   mounted() {
+    // When this page loads, get the data grid items and the food/unit dropdown items
     this.loadItems()
     this.loadFoodDropdown()
     this.loadUnitDropdown()
   },
   methods: {
+    // GET request to load all of a user's shopping list records from the shopping_list_V view
     loadItems() {
       let self = this
       this.items = []
       axios.get(
-          "/api/shopping-list",
+          "/api/shopping-list/" + this.userid,
       ).then(function (response) {
         self.items = response.data.map((item) => {
           return {
@@ -189,6 +261,7 @@ export default {
         })
       })
     },
+    // GET request to list all food records to show in dropdown
     loadFoodDropdown() {
       let self = this
       this.foodMenuList = []
@@ -205,6 +278,7 @@ export default {
         })
       })
     },
+    // GET request to get all the unit records to display in dropdown
     loadUnitDropdown() {
       let self = this
       this.unitMenuList = []
@@ -220,6 +294,7 @@ export default {
         })
       })
     },
+    // Post request to insert the food inventory item that has been created
     createItem() {
       axios.post("/api/food_inventory", {
         food_id: this.food,
@@ -227,19 +302,20 @@ export default {
         food_unit_id: this.unit,
         food_cost_usd: this.cost,
         food_acquisition_date: '9999-12-31',
-        create_user_id: 1,
-        update_user_id: 1,
+        create_user_id: this.userid,
+        update_user_id: this.userid,
         record_status: 'L'
       })
-    .then(function (response) {
+    .then(response => {
         console.log(response);
-      }).then(function() {
+        // Reload grid data after a change
         this.loadItems();
       })
           .catch(function (error) {
             console.log(error);
           });
     },
+    // PUT request to update the food inventory record that has been modified
     addToPantry() {
       for (let i = 0; i < this.selected.length; i++)
         axios.put("/api/food_inventory/" + this.selected[i].food_inventory_id, {
@@ -247,21 +323,33 @@ export default {
           food_id: this.selected[i].food_id,
           food_quantity: this.selected[i].food_quantity,
           food_unit_id: this.selected[i].unit_id,
-          food_cost_usd: this.selected[i].food_cost_usd,
+          food_cost_usd: this.selected[i].food_cost.replace(/\$/g, ''),
           food_acquisition_date: new Date(),
-          create_user_id: 1,
-          update_user_id: 1,
+          create_user_id: this.userid,
+          update_user_id: this.userid,
           record_status: 'A'
-        })
-            .then(function (response) {
-              console.log(response);
-            }).then(function() {
+        }).then(response => {
+          console.log(response);
           this.loadItems();
         })
             .catch(function (error) {
               console.log(error);
             });
     },
+    onlyForCurrency ($event) {
+      // console.log($event.keyCode); //keyCodes value
+      let keyCode = ($event.keyCode ? $event.keyCode : $event.which);
+
+      // only allow number and one dot
+      if ((keyCode < 48 || keyCode > 57) && (keyCode !== 46 || this.cost.indexOf('.') != -1)) { // 46 is dot
+        $event.preventDefault();
+      }
+
+      // restrict to 2 decimal places
+      if(this.cost!=null && this.cost.indexOf(".")>-1 && (this.cost.split('.')[1].length > 1)){
+        $event.preventDefault();
+      }
+    }
   }
 };
 </script>
